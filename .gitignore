@@ -1,0 +1,9 @@
+.history
+.jj
+.env
+.o
+.ob
+.exe
+node_modules/
+.DS_Store
+.vscode
