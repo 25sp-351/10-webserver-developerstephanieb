@@ -10,9 +10,6 @@
 #define LISTEN_BACKLOG 10
 int verbose = 0;
 
-void serve_static(int client_fd, const char *path);
-void serve_calc(int client_fd, const char *path);
-
 void *handle_client(void *arg) {
   int client_fd = *(int *)arg;
   free(arg);
@@ -20,44 +17,69 @@ void *handle_client(void *arg) {
   char buffer[BUFFER_SIZE];
 
   ssize_t bytes_received = read(client_fd, buffer, sizeof(buffer) - 1);
-
-  if (bytes_received > 0) {
-    buffer[bytes_received] = '\0';
-
+  if (bytes_received <= 0) {
     if (verbose) {
-      printf("Received Request:\n%s\n", buffer);
+      printf("Client disconnected or error during read.\n");
     }
+    close(client_fd);
+    return NULL;
+  }
 
-    char method[8];
-    char path[1024];
-    char version[16];
+  buffer[bytes_received] = '\0';
 
-    sscanf(buffer, "%s %s %s", method, path, version);
+  if (verbose) {
+    printf("Received request:\n%s\n", buffer);
+  }
 
-    if (verbose) {
-      printf("Method: %s\n", method);
-      printf("Path: %s\n", path);
-      printf("Version: %s\n", version);
-    }
+  char method[8];
+  char path[1024];
+  char version[16];
 
-    if (strcmp(method, "GET") != 0) {
-      const char *error_response = "HTTP/1.1 405 Method Not Allowed\r\n"
-                                   "Content-Length: 0\r\n"
-                                   "\r\n";
-      write(client_fd, error_response, strlen(error_response));
+  char *line = strtok(buffer, "\r\n");
+  if (line) {
+    if (sscanf(line, "%7s %1023s %15s", method, path, version) == 3) {
+      if (verbose) {
+        printf("Parsed Request:\n");
+        printf("Method: %s\n", method);
+        printf("Path: %s\n", path);
+        printf("Version: %s\n", version);
+      }
+      if (strcmp(method, "GET") != 0) {
+        if (verbose) {
+          printf("Unsupported method: %s\n", method);
+        }
+        close(client_fd);
+        if (verbose) {
+          printf("Client disconnected\n");
+        }
+        return NULL;
+      }
+    } else {
+      if (verbose) {
+        printf("Malformed request line.\n");
+      }
       close(client_fd);
+      if (verbose) {
+        printf("Client disconnected\n");
+      }
       return NULL;
     }
+  } else {
+    if (verbose) {
+      printf("No request line found.\n");
+    }
+    close(client_fd);
+    if (verbose) {
+      printf("Client disconnected\n");
+    }
+    return NULL;
+  }
 
-    if (strncmp(path, "/static", 7) == 0) {
-      serve_static(client_fd, path);
-    } else if (strncmp(path, "/calc", 5) == 0) {
-      serve_calc(client_fd, path);
-    } else {
-      const char *not_found_response = "HTTP/1.1 404 Not Found\r\n"
-                                       "Content-Length: 0\r\n"
-                                       "\r\n";
-      write(client_fd, not_found_response, strlen(not_found_response));
+  char *header_line;
+  while ((header_line = strtok(NULL, "\r\n")) != NULL &&
+         strlen(header_line) > 0) {
+    if (verbose) {
+      printf("Header: %s\n", header_line);
     }
   }
 
@@ -65,7 +87,6 @@ void *handle_client(void *arg) {
   if (verbose) {
     printf("Client disconnected\n");
   }
-
   return NULL;
 }
 
@@ -127,7 +148,6 @@ int main(int argc, char *argv[]) {
 
     *client_fd_buf = accept(socket_fd, (struct sockaddr *)&client_address,
                             &client_address_len);
-
     if (*client_fd_buf < 0) {
       perror("accept");
       free(client_fd_buf);
@@ -136,10 +156,12 @@ int main(int argc, char *argv[]) {
 
     char client_ip[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &client_address.sin_addr, client_ip, sizeof(client_ip));
+
     if (verbose) {
       printf("Accepted connection from %s:%d\n", client_ip,
              ntohs(client_address.sin_port));
     }
+
     pthread_t thread;
     pthread_create(&thread, NULL, handle_client, client_fd_buf);
     pthread_detach(thread);
