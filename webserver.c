@@ -10,6 +10,7 @@
 #define DEFAULT_PORT 80
 #define BUFFER_SIZE 1024
 #define LISTEN_BACKLOG 10
+#define PIPELINE_BUFFER_SIZE 8192
 int verbose = 0;
 
 typedef struct {
@@ -25,14 +26,15 @@ int send_response(int client_fd, int status_code, const char *content_type,
 void handle_calc(int client_fd, const char *path);
 void handle_static(int client_fd, const char *url_path);
 const char *get_mime_type(const char *filename);
+void handle_sleep(int client_fd, const char *path);
 
 int main(int argc, char *argv[]) {
   int port = DEFAULT_PORT;
 
-  for (int i = 1; i < argc; i++) {
-    if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) {
-      port = atoi(argv[++i]);
-    } else if (strcmp(argv[i], "-v") == 0) {
+  for (int ii = 1; ii < argc; ii++) {
+    if (strcmp(argv[ii], "-p") == 0 && ii + 1 < argc) {
+      port = atoi(argv[++ii]);
+    } else if (strcmp(argv[ii], "-v") == 0) {
       verbose = 1;
     } else {
       printf("Usage: %s [-p port] [-v]\n", argv[0]);
@@ -100,6 +102,7 @@ int main(int argc, char *argv[]) {
 
     pthread_t thread;
     pthread_create(&thread, NULL, handle_client, client_fd_buf);
+
     pthread_detach(thread);
   }
 
@@ -111,66 +114,61 @@ void *handle_client(void *arg) {
   int client_fd = *(int *)arg;
   free(arg);
 
-  char buffer[BUFFER_SIZE];
+  char buffer[PIPELINE_BUFFER_SIZE];
+  size_t buf_len = 0;
 
-  ssize_t bytes_received = read(client_fd, buffer, sizeof(buffer) - 1);
-  if (bytes_received <= 0) {
-    if (verbose) {
-      printf("Client disconnected or error during read.\n");
+  while (1) {
+    ssize_t bytes_read =
+        read(client_fd, buffer + buf_len, sizeof(buffer) - buf_len - 1);
+    if (bytes_read <= 0) {
+      if (verbose)
+        printf("Client disconnected or error.\n");
+      break;
     }
-    close(client_fd);
-    return NULL;
-  }
 
-  buffer[bytes_received] = '\0';
+    buf_len += bytes_read;
+    buffer[buf_len] = '\0';
 
-  if (verbose) {
-    printf("Received request:\n%s\n", buffer);
-  }
+    char *start = buffer;
+    while (1) {
+      char *end_of_request = strstr(start, "\r\n\r\n");
+      if (!end_of_request)
+        break;
 
-  HttpRequest req;
-  if (parse_http_request(buffer, &req) != 0) {
-    if (verbose) {
-      printf("Invalid or unsupported HTTP request.\n");
+      size_t request_len = end_of_request - start + 4;
+      char request_buf[BUFFER_SIZE];
+      strncpy(request_buf, start, request_len);
+      request_buf[request_len] = '\0';
+
+      HttpRequest req;
+      if (parse_http_request(request_buf, &req) == 0) {
+        if (verbose)
+          printf("Parsed pipelined request: %s\n", req.path);
+
+        if (strncmp(req.path, "/calc/", 6) == 0) {
+          handle_calc(client_fd, req.path);
+        } else if (strncmp(req.path, "/static/", 8) == 0) {
+          handle_static(client_fd, req.path);
+        } else if (strncmp(req.path, "/sleep/", 7) == 0) {
+          handle_sleep(client_fd, req.path);
+        } else {
+          const char *not_found =
+              "<html><body><h1>404 Not Found</h1></body></html>";
+          send_response(client_fd, 404, "text/html", not_found,
+                        strlen(not_found));
+        }
+      }
+
+      start = end_of_request + 4;
     }
-    close(client_fd);
-    if (verbose) {
-      printf("Client disconnected\n");
-    }
-    return NULL;
-  }
 
-  if (verbose) {
-    printf("Parsed Request:\n");
-    printf("Method: %s\n", req.method);
-    printf("Path: %s\n", req.path);
-    printf("Version: %s\n", req.version);
+    buf_len = strlen(start);
+    memmove(buffer, start, buf_len);
   }
-
-  if (strncmp(req.path, "/calc/", 6) == 0) {
-    handle_calc(client_fd, req.path);
-    close(client_fd);
-    if (verbose) {
-      printf("Client disconnected\n");
-    }
-    return NULL;
-  }
-
-  if (strncmp(req.path, "/static/", 8) == 0) {
-    handle_static(client_fd, req.path);
-    close(client_fd);
-    if (verbose)
-      printf("Client disconnected\n");
-    return NULL;
-  }
-
-  const char *not_found = "<html><body><h1>404 Not Found</h1></body></html>";
-  send_response(client_fd, 404, "text/html", not_found, strlen(not_found));
 
   close(client_fd);
-  if (verbose) {
+  if (verbose)
     printf("Client disconnected\n");
-  }
   return NULL;
 }
 
@@ -358,4 +356,27 @@ const char *get_mime_type(const char *filename) {
     return "image/png";
 
   return "application/octet-stream";
+}
+
+void handle_sleep(int client_fd, const char *path) {
+  int seconds = 0;
+
+  if (sscanf(path, "/sleep/%d", &seconds) != 1 || seconds < 0 || seconds > 10) {
+    const char *error =
+        "<html><body>Invalid sleep time (0–10 seconds allowed)</body></html>";
+    send_response(client_fd, 400, "text/html", error, strlen(error));
+    return;
+  }
+
+  if (verbose) {
+    printf("Sleeping for %d second(s)...\n", seconds);
+  }
+
+  sleep(seconds);
+
+  char body[128];
+  snprintf(body, sizeof(body),
+           "<html><body>Slept for %d second(s)</body></html>", seconds);
+
+  send_response(client_fd, 200, "text/html", body, strlen(body));
 }

@@ -51,12 +51,16 @@ Ending the session:
 New HTTP request:
 ```bash
 GET http://127.0.0.1:<port>/calc/add/5/10
+GET http://127.0.0.1:<port>/static/images/puppy.jpg
+GET http://127.0.0.1:<port>/sleep/3
 ```
 
 ### Connecting via a web browser
 In a browser:
 ```bash 
 http://127.0.0.1:<port>/calc/add/5/10
+http://127.0.0.1:<port>/static/images/puppy.jpg
+http://127.0.0.1:<port>/sleep/3
 ```
 ---
 
@@ -126,8 +130,8 @@ It should return nothing if the server is fully terminated.
 - [ x ] Keep clean, modular interfaces between components.  
 
 7. Extra Credit (Pipelining)  
-- [ ] Implement HTTP/1.1 pipelining:  
-    - [ ] Handle multiple client requests before sending any response.  
-    - [ ] Send responses in order of requests.  
-- [ ] Implement `/sleep/<seconds>` path to test delayed responses.  
+- [ x ] Implement HTTP/1.1 pipelining:  
+    - [ x ] Handle multiple client requests before sending any response.  
+    - [ x ] Send responses in order of requests.  
+- [ x ] Implement `/sleep/<seconds>` path to test delayed responses.  
 - [ ] Use mutex locks or other synchronization to correctly manage response ordering.
