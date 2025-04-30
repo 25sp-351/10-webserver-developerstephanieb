@@ -3,21 +3,19 @@
 ---
 
 ## Module Structure
-|         File          | Purpose                                                                  |
-| :-------------------: | :----------------------------------------------------------------------- |
-|      webserver.c      | Main entry point: socket setup, listening                                |
-|    request.h & .c     | Parse the incoming HTTP request (method, path, headers)                  |
-|    response.h & .c    | Build HTTP responses based on the request (headers, body, status codes). |
-| static_handler.h & .c | Handle serving static files from `/static` path                          |
-|  calc_handler.h & .c  | Handle `/calc` math operations                                           |
-|      mime.h & .c      | Determine Content-Type based on file extension                           |
-|    pipeline.h & .c    | Manage pipelining requests                                               |
+|         File          | Purpose                                                                |
+| :-------------------: | :--------------------------------------------------------------------- |
+|      webserver.c      | Main entry point: sets up the server, accepts clients, creates threads |
+|    request.h & .c     | Parses the HTTP request line and headers into a structured format      |
+|    response.h & .c    | Constructs and sends HTTP responses (status line, headers, body)       |
+| static_handler.h & .c | Handles /static/... file serving and /sleep/... delayed responses      |
+|  calc_handler.h & .c  | Handles /calc/add, /calc/mul, /calc/div operations                     |
 
 ---
 
 ## Compile the server
 ```bash
-gcc -Wall -Wextra -pthread -o echo_server echo.c
+gcc -Wall -Wextra -pthread -o webserver webserver.c request.c response.c calc_handler.c static_handler.c
 ```
 or
 ```bash
@@ -27,12 +25,12 @@ make
 ---
 
 ## Run the server
-|              Goal               |                            Command                             |
-| :-----------------------------: | :------------------------------------------------------------: |
-|  Default port 8888, no verbose  |                        `./echo_server`                         |
-|     Chosen port, no verbose     |                   `./echo_server -p <port>`                    |
-| Default port 8888, verbose mode |                       `./echo_server -v`                       |
-|    Chosen port, verbose mode    | `./echo_server -p <port> -v` *or* `./echo_server -v -p <port>` |
+|             Goal              |                          Command                           |
+| :---------------------------: | :--------------------------------------------------------: |
+|  Default port 80, no verbose  |                       `./webserver`                        |
+|    Chosen port, no verbose    |                  `./webserver -p <port>`                   |
+| Default port 80, verbose mode |                      `./webserver -v`                      |
+|   Chosen port, verbose mode   | `./webserver -p <port> -v` *or* `./webserver -v -p <port>` |
 
 ---
 

@@ -1,7 +1,7 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -pthread
 TARGET = webserver
-SRC = webserver.c
+SRC = webserver.c request.c response.c calc_handler.c static_handler.c
 
 all: $(TARGET)
 
